@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>转盘抽奖 - 扫码参与</title>
+<style>
+  body{font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; margin:0; padding:0; display:flex; min-height:100vh; align-items:center; justify-content:center; background:#f6f7fb;}
+  .card{width:95%; max-width:420px; background:white; border-radius:12px; box-shadow:0 6px 20px rgba(20,30,60,0.12); padding:20px; text-align:center;}
+  h1{font-size:18px; margin:6px 0 14px;}
+  #wheel{width:320px; height:320px; margin:0 auto; border-radius:50%; position:relative; overflow:hidden; transform:rotate(0deg); transition: transform 6s cubic-bezier(.12,.7,.2,1);}
+  .slice{position:absolute; width:50%; height:50%; left:50%; top:50%; transform-origin:0% 0%; border:1px solid rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:flex-start; padding-left:18px; box-sizing:border-box; color:#fff; font-weight:700;}
+  /* 配色四个悬赏色 */
+  .s0{background:#ff6b6b;}
+  .s1{background:#f7b731;}
+  .s2{background:#4b7bec;}
+  .s3{background:#20bf6b;}
+  #pointer{position:absolute; top:calc(50% - 10px); left:calc(50% - 6px); width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:18px solid #222; transform:translateY(-160px); z-index:5;}
+  #spinInfo{margin-top:12px; color:#555;}
+  button{margin-top:12px; padding:10px 14px; border-radius:10px; border:0; background:#222; color:#fff; font-weight:600;}
+  #overlay{position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:20;}
+  #modal{background:#fff; padding:18px; border-radius:10px; max-width:92%; width:360px; text-align:center;}
+  #modal p{margin:8px 0;}
+  a.btnLink{display:inline-block; margin-top:12px; padding:10px 14px; background:#1da1f2; color:#fff; border-radius:8px; text-decoration:none; font-weight:700;}
+  small.note{display:block; margin-top:8px; color:#999;}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>感谢参与！— 转盘抽奖</h1>
+    <div id="wheelWrap" style="position:relative;">
+      <div id="wheel" aria-hidden="true"></div>
+      <div id="pointer" aria-hidden="true"></div>
+    </div>
+    <div id="spinInfo">页面打开时会自动抽一次。每部手机/浏览器仅限参加一次。</div>
+    <button id="manualSpinBtn" style="display:none;">重新抽奖（需联系工作人员）</button>
+    <small class="note">抽奖结果会显示并提示添加工作人员 Telegram 领取奖品或沟通。</small>
+  </div>
+
+  <div id="overlay" role="dialog" aria-modal="true">
+    <div id="modal">
+      <h3 id="resultTitle">恭喜！</h3>
+      <p id="resultText"></p>
+      <a id="tgLink" class="btnLink" href="#" target="_blank" rel="noopener">添加工作人员领取</a>
+      <p style="margin-top:10px; font-size:13px; color:#666;">若需再次抽奖，请先添加工作人员 Telegram 与我们沟通。</p>
+      <div style="margin-top:10px;"><button id="closeModal">确定</button></div>
+    </div>
+  </div>
+
+<script>
+/* --------- 配置区域（只改下面这一行） ---------- */
+const TELEGRAM_USERNAME = 'Crystalking1999'; // <-- 工作人员 telegram 用户名（不要加 @）
+/* ----------------------------------------------- */
+
+const outcomes = [
+  {text:'感谢您的参与', note:'感谢您的参与，祝您生活愉快！'},
+  {text:'恭喜您获得20%优惠券', note:'请添加工作人员领取优惠券码。'},
+  {text:'分享产品体验可获得免费产品', note:'联系客服确认分享方式与领取流程。'},
+  {text:'免费的神秘礼物', note:'联系客服核对收货信息领取神秘礼物。'}
+];
+
+const wheel = document.getElementById('wheel');
+const overlay = document.getElementById('overlay');
+const resultText = document.getElementById('resultText');
+const resultTitle = document.getElementById('resultTitle');
+const tgLink = document.getElementById('tgLink');
+const manualSpinBtn = document.getElementById('manualSpinBtn');
+const closeModal = document.getElementById('closeModal');
+
+tgLink.href = 'https://t.me/' + TELEGRAM_USERNAME;
+tgLink.textContent = '添加工作人员: @' + TELEGRAM_USERNAME;
+
+function buildWheel(){
+  const slices = outcomes.length;
+  const deg = 360 / slices;
+  wheel.innerHTML = '';
+  for(let i=0;i<slices;i++){
+    const s = document.createElement('div');
+    s.className = 'slice s'+(i%4);
+    s.style.transform = 'rotate(' + (i*deg) + 'deg) translate(-100%, -100%)';
+    s.style.width = '200%';
+    s.style.height='200%';
+    s.innerHTML = '<div style="transform:rotate(' + (deg/2) + 'deg); width:100%; text-align:left; padding-left:12px;">' + outcomes[i].text + '</div>';
+    wheel.appendChild(s);
+  }
+}
+buildWheel();
+
+/* 判断是否已经参与（用 localStorage） */
+const PARTICIPATED_KEY = 'wheel_participated_v1';
+function hasParticipated(){
+  try{
+    return localStorage.getItem(PARTICIPATED_KEY) === '1';
+  }catch(e){
+    return false;
+  }
+}
+function setParticipated(){
+  try{
+    localStorage.setItem(PARTICIPATED_KEY, '1');
+  }catch(e){}
+}
+
+/* 转盘逻辑：自动启动 */
+function startSpin(auto=true){
+  if(hasParticipated()){
+    // 已参与：显示按钮让用户添加工作人员联系
+    manualSpinBtn.style.display = 'block';
+    manualSpinBtn.onclick = ()=>{ overlayShowInfo('已参与', '您已使用过此设备参加抽奖。如需再次参加，请添加工作人员联系。'); };
+    return;
+  }
+
+  // 随机选择结果索引
+  const idx = Math.floor(Math.random() * outcomes.length);
+  // 为了视觉效果，计算随机圈数 + 目标角度
+  const slices = outcomes.length;
+  const degPer = 360 / slices;
+  const targetDeg = 360 * (3 + Math.floor(Math.random()*3)) + (360 - (idx * degPer) - degPer/2); // 多圈后停在目标扇区中心
+  wheel.style.transition = 'transform 5s cubic-bezier(.12,.7,.2,1)';
+  wheel.style.transform = 'rotate(' + targetDeg + 'deg)';
+
+  // 播放结束后显示结果
+  setTimeout(()=>{
+    setParticipated();
+    overlayShowResult(idx);
+  }, 5200);
+}
+
+/* 显示结果弹窗 */
+function overlayShowResult(idx){
+  resultTitle.textContent = outcomes[idx].text;
+  resultText.textContent = outcomes[idx].note + '（如需再次抽奖，请添加工作人员 Telegram 联系）';
+  overlay.style.display = 'flex';
+}
+function overlayShowInfo(title, text){
+  resultTitle.textContent = title;
+  resultText.textContent = text;
+  overlay.style.display = 'flex';
+}
+
+closeModal.addEventListener('click', ()=>{
+  overlay.style.display = 'none';
+});
+
+/* 页面加载时自动抽（或显示已参与） */
+window.addEventListener('load', ()=>{
+  // 等 DOM 渲染后稍等 300ms 再转（感觉更友好）
+  setTimeout(()=>{ startSpin(true); }, 300);
+});
+
+/* 防止用户刷新绕过：如果未参与但 rapid 刷新触发，逻辑仍以 localStorage 为准（它会在第一次抽后被写入） */
+/* 注意：localStorage 可被清除或在不同浏览器/不同设备不共享——这是免费方案的限制 */
+</script>
+</body>
+</html>
